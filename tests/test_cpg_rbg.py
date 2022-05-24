@@ -27,50 +27,27 @@ from open_loop.meta_openloop import CentralPatternGeneratorNetwork, RadialBasisF
 # %autoreload 2
 # -
 
-sin_config = {'amplitude':0.5, 'theta': -0.5 * np.pi, 'frequency': 10.0}
+sin_config = {'amplitude':0.2, 'theta': -0.5 * np.pi, 'frequency': 1.0}
 cpg = CentralPatternGeneratorNetwork(sin_config, timestep=0.01)
 
 cpg.reset()
-cpg_output = np.array([cpg.get_action() for _ in range(200)])
-
-y1, y2 = cpg_output[:, 0], cpg_output[:, 1]
-x = np.arange(cpg_output.shape[0])
-
 fig = plt.figure(figsize=(8,6))
 ax = fig.add_subplot(111)
-ax.plot(x, y1)
-ax.plot(x, y2)
-plt.show()
+cpg.plot_curve(ax)
 
-# +
 rbf = RadialBasisFunctionNetwork(num_rbf=9, cpg_net=cpg)
-rbf_output = np.array([rbf.get_action() for _ in range(200)])
-y = rbf_output
-
-x = np.arange(rbf_output.shape[0])
-y1, y2, y3 = y[:, 0], y[:, 1], y[:, 2]
-y4, y5, y6 = y[:, 3], y[:, 4], y[:, 5]
-y7, y8, y9 = y[:, 6], y[:, 7], y[:, 8]
-
 fig = plt.figure(figsize=(8,6))
 ax = fig.add_subplot(111)
-ax.plot(x, y1)
-ax.plot(x, y2)
-ax.plot(x, y3)
-ax.plot(x, y4)
-ax.plot(x, y5)
-ax.plot(x, y6)
-ax.plot(x, y7)
-ax.plot(x, y8)
-ax.plot(x, y9)
-plt.show()
-# -
+rbf.plot_curve(ax, cpg)
 
-sin_config = {'amplitude':0.2, 'theta': -0.5 * np.pi, 'frequency': 10.0}
+sin_config = {'amplitude':0.2, 'theta': -0.5 * np.pi, 'frequency': 1.0}
 timestep = 0.01
-num_rbf = 200
+num_rbf = 20
 num_act = 3
 cpg_rbfn = CpgRbfNet(sin_config, timestep, num_rbf, num_act)
+fig = plt.figure(figsize=(8,6))
+ax = fig.add_subplot(111)
+cpg_rbfn.plot_curve(ax)
 
 env = build_regular_env(
     a1.A1,

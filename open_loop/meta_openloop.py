@@ -12,6 +12,7 @@ os.sys.path.insert(0, parentdir)
 import attr
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
 from gym import spaces
 from torch import nn
@@ -32,23 +33,27 @@ class CentralPatternGeneratorNetwork():
         self.amplitude = sine_config['amplitude']
         self.theta = sine_config['theta']
         self.frequency = sine_config['frequency']
-
         self.timestep = timestep
 
         self.period = 1 / sine_config['frequency']
 
         # remember to add 1 for total timestep
-        self.timestep_per_period = int(self.period / self.timestep)
         self.reset()
 
     def reset(self):
         pass
 
-
     def get_action(self, t) -> np.ndarray:
         return self._sines(t)
 
-    def _sines(t):
+    def plot_curve(self, ax):
+        x = np.arange(0, (self.period * 3) + self.timestep, self.timestep)
+        y = self.get_action(x)
+        ax.plot(x, y[:, 0])
+        ax.plot(x, y[:, 1])
+        return ax
+
+    def _sines(self, t):
         phase1 =  2 * np.pi * self.frequency * t
         phase2 =  2 * np.pi * self.frequency * t + self.theta
         phase = np.vstack([phase1, phase2]).T
@@ -70,34 +75,38 @@ class RadialBasisFunctionNetwork():
     ):
         self.num_rbf = num_rbf
         self.kernel_func = kernel_func
-        self.cpg_net = cpg_net
-        self._init_weight()
+        # self.cpg_net = cpg_net
+        # self.period = cpg_net.period
+        # self.timestep = cpg_net.timestep
+        self._init_weight(cpg_net)
         self.reset()
 
     def reset(self):
         ''' init weigth and period_signal '''
+        pass
 
-        self.period_signal = self._get_period_signal(self.cpg_net)
-        self.cycle_signal = cycle(self.period_signal)
-
-    def get_action(self, obs: np.ndarray=None) -> np.ndarray:
-        # obs is dummy for rbf, just for consistent api.
-        return next(self.cycle_signal)
-
-    def _get_period_signal(self, cpg_net):
-
-        x = np.tile(cpg_net.period_signal[:, None], (1, self.num_rbf, 1))
-        c = np.tile(self.centres[None], (cpg_net.timestep_per_period, 1, 1))
+    def get_action(self, x) -> np.ndarray:
+        ''' x is the cpg signal '''
+        x = np.tile(x[:,None], (1, self.num_rbf, 1))
+        c = np.tile(self.centres, (x.shape[0], 1, 1))
         distances = np.sqrt(np.square(x - c).sum(-1)) / np.exp(self.log_sigmas)
         return self.kernel_func(distances).squeeze()
 
-    def _init_weight(self):
+    def plot_curve(self, ax, cpg_net):
+        t = np.arange(0, cpg_net.period * 3 + cpg_net.timestep, cpg_net.timestep)
+        x = cpg_net.get_action(t)
+        y = self.get_action(x)
+        for i in range(self.num_rbf):
+            ax.plot(t, y[:, i])
+        return ax
+
+    def _init_weight(self, cpg_net):
         # set rbf centres "u_i^{a_j} = a_j(T*(i-1)/(M-1)); i=1,2,...,M, j=0,1"
-        idx = np.linspace(
-            0, self.cpg_net.timestep_per_period,
-            self.num_rbf, endpoint=False, dtype=np.int64
+        t = np.linspace(
+            0, cpg_net.period,
+            self.num_rbf, endpoint=False
         )
-        self.centres = self.cpg_net.period_signal[idx]
+        self.centres = cpg_net.get_action(t)
         self.log_sigmas = np.zeros(self.num_rbf) + np.log(0.5)
 
     def _set_cpg_net(self, cpg_net):
@@ -113,9 +122,6 @@ class CpgRbfNet(nn.Module):
         num_act: int
     ):
         super().__init__()
-        self.sin_config = sin_config
-        self.timestep = timestep
-
         self.num_rbf = num_rbf
         self.num_act = num_act
 
@@ -124,21 +130,33 @@ class CpgRbfNet(nn.Module):
             num_rbf, cpg_net=self.cpg
         )
         self.linear = nn.Linear(num_rbf, num_act)
-        self.timestep_per_period = self.cpg.timestep_per_period
+
+        self.timestep = self.cpg.timestep
+        self.period = self.cpg.period
+
         self._init_weight()
         self.reset()
 
     def reset(self):
-
         self.cpg.reset()
         self.rbf.reset()
 
-        self.period_signal = self._get_period_signal()
-        self.cycle_signal = cycle(self.period_signal)
+    def get_action(self, t) -> np.ndarray:
+        x = self.cpg.get_action(t)
+        raw_action = self.rbf.get_action(x)
+        action = self.linear(ptu.from_numpy(raw_action))
+        return ptu.to_numpy(action)
 
-    def get_action(self, obs: np.ndarray=None) -> np.ndarray:
-        act = next(self.cycle_signal) - self.period_signal[0]
-        return ptu.to_numpy(act)
+    def get_observation(self, input_observation):
+        """Get the trajectory generator's observation."""
+        return input_observation
+
+    def plot_curve(self, ax):
+        x = np.arange(0, self.period * 3 + self.timestep, self.timestep)
+        y = self.get_action(x)
+        for i in range(self.num_act):
+            ax.plot(x, y[:, i])
+        return ax
 
     def get_flat_weight(self):
         return ptu.to_numpy(self.linear.weight.data.flatten())
@@ -151,9 +169,6 @@ class CpgRbfNet(nn.Module):
 
     def _init_weight(self):
         pass
-
-    def _get_period_signal(self):
-        return self.linear(ptu.from_numpy(self.rbf.period_signal))
 
     @property
     def num_params(self):
