@@ -23,6 +23,15 @@ from motion_imitation.robots import laikago_pose_utils
 
 from reRLs.infrastructure.utils import pytorch_util as ptu
 
+def init_weights(m: nn.Module, gain: float = 1):
+    """
+        Orthogonal initialization (used in PPO and A2C)
+    """
+    if isinstance(m, (nn.Linear, nn.Conv2d)):
+        torch.nn.init.xavier_normal_(m.weight, gain=gain)
+        if m.bias is not None:
+            m.bias.data.fill_(0.00)
+
 class CentralPatternGeneratorNetwork():
 
     def __init__(
@@ -130,6 +139,7 @@ class CpgRbfNet(nn.Module):
             num_rbf, cpg_net=self.cpg
         )
         self.linear = nn.Linear(num_rbf, num_act)
+        self.apply(init_weights)
 
         self.timestep = self.cpg.timestep
         self.period = self.cpg.period

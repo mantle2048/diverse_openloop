@@ -3,11 +3,13 @@ import numpy as np
 import torch
 import time
 import gym
+import random
 
 import open_loop
 
 from typing import Dict
 from pyvirtualdisplay import Display
+from matplotlib import pyplot as plt
 
 from reRLs.infrastructure.utils import pytorch_util as ptu
 from reRLs.infrastructure.utils.utils import Path, get_pathlength, write_gif
@@ -96,9 +98,15 @@ class Traj_Trainer():
         self.es_solver = CMAES(
             num_params=self.trajectory_generator.num_params,
             popsize=self.config['popsize'],
-            sigma_init=0.10,
+            sigma_init=0.1,
             weight_decay=0.01
         )
+
+        # Set random seed (must be set after es_sovler)
+        seed = self.config['seed']
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
         # simulation timestep, will be used for video saving
         if 'model' in dir(self.env):
@@ -162,24 +170,35 @@ class Traj_Trainer():
 
         self.trajectory_generator.set_flat_weight(best_param)
 
+        eval_paths = []
+        for _ in range(10):
+            eval_paths.append(rollout(self.env))
+
         if self.logvideo:
-            path = rollout(self.env, render=True)
-            video_path = [path['image_obs']]
+            video_paths = [rollout(self.env, render=True) for _ in range(2)]
 
             self.logger.log_paths_as_videos(
-                video_path, itr, fps=self.fps, video_title='rollout'
+                video_paths, itr, fps=self.fps, video_title='rollout'
             )
 
+            fig = plt.figure(figsize=(6,4))
+            ax_1 = self.trajectory_generator.cpg.plot_curve(fig.add_subplot(121))
+            ax_2 = self.trajectory_generator.plot_curve(fig.add_subplot(122))
+            self.logger.log_figure(fig, 'trajectory_curve', itr)
 
-        ep_lens = [get_pathlength(path) for path in paths]
-        returns = [path["rew"].sum() for path in paths]
+        train_ep_lens = [get_pathlength(path) for path in paths]
+        eval_ep_lens = [get_pathlength(path) for path in eval_paths]
+        train_returns = [path["rew"].sum() for path in paths]
+        eval_returns = [path["rew"].sum() for path in eval_paths]
 
         self.logger.record_tabular("Itr", itr)
 
-        self.logger.record_tabular_misc_stat("Reward", returns)
+        self.logger.record_tabular_misc_stat("TrainReward", train_returns)
+        self.logger.record_tabular_misc_stat("EvalReward", eval_returns)
         self.logger.record_tabular("TotalEnvInteracts", self.total_steps)
         self.logger.record_tabular("BestReturn", best_fitness)
-        self.logger.record_tabular("EpLen", np.mean(ep_lens))
+        self.logger.record_tabular("TrainEpLen", np.mean(train_ep_lens))
+        self.logger.record_tabular("EvalEpLen", np.mean(eval_ep_lens))
         self.logger.record_tabular("Time", (time.time() - self.start_time) / 60)
 
         self.logger.dump_tabular(with_prefix=True, with_timestamp=False)
@@ -208,7 +227,7 @@ def get_parser():
     # cpg_rbf args
     parser.add_argument('--amplitude', '-A', type=float, default=0.2)
     parser.add_argument('--theta', type=float, default=-0.5*np.pi)
-    parser.add_argument('--frequency', type=float, default=10.0)
+    parser.add_argument('--frequency', type=float, default=1.0)
     parser.add_argument('--num_rbf', type=int, default=20)
 
     # es args
