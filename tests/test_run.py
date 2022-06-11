@@ -10,15 +10,15 @@ def test_run(seed=1):
     
     arg_list =  [
         '--n_itr',
-        '101',
+        '1001',
         '--video_log_freq',
-        '20',
+        '100',
         '--seed',
         f'{seed}',
         '--amplitude',
-        '1.0',
+        '1',
         '--frequency',
-        '5',
+        '1',
         '--num_rbf',
         '100',
         '--env_name',
@@ -37,5 +37,7 @@ def test_run(seed=1):
 
 if __name__ == '__main__':
     test_run()
+
+
 
 

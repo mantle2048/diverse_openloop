@@ -58,8 +58,8 @@ class CentralPatternGeneratorNetwork():
     def plot_curve(self, ax):
         x = np.arange(0, (self.period * 3) + self.timestep, self.timestep)
         y = self.get_action(x)
-        ax.plot(x, y[:, 0])
-        ax.plot(x, y[:, 1])
+        ax.plot(x, y[:, 0], linewidth=3)
+        ax.plot(x, y[:, 1], linewidth=3)
         return ax
 
     def _sines(self, t):
@@ -101,12 +101,16 @@ class RadialBasisFunctionNetwork():
         distances = np.sqrt(np.square(x - c).sum(-1)) / np.exp(self.log_sigmas)
         return self.kernel_func(distances).squeeze()
 
-    def plot_curve(self, ax, cpg_net):
+    def plot_curve(self, ax, cpg_net, join=True):
         t = np.arange(0, cpg_net.period * 3 + cpg_net.timestep, cpg_net.timestep)
         x = cpg_net.get_action(t)
         y = self.get_action(x)
-        for i in range(self.num_rbf):
-            ax.plot(t, y[:, i])
+        if join:
+            for i in range(self.num_rbf):
+                ax.plot(t, y[:, i], linewidth=3)
+        else:
+            for i, a in enumerate(ax):
+                a.plot(t, y[:, i], linewidth=3)
         return ax
 
     def _init_weight(self, cpg_net):
@@ -165,7 +169,7 @@ class CpgRbfNet(nn.Module):
         x = np.arange(0, self.period * 3 + self.timestep, self.timestep)
         y = self.get_action(x)
         for i in range(self.num_act):
-            ax.plot(x, y[:, i])
+            ax.plot(x, y[:, i], linewidth=3)
         return ax
 
     def get_flat_weight(self):

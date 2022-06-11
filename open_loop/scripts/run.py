@@ -15,7 +15,7 @@ from reRLs.infrastructure.utils import pytorch_util as ptu
 from reRLs.infrastructure.utils.utils import Path, get_pathlength, write_gif
 from reRLs.infrastructure.loggers import setup_logger
 
-from es import CMAES
+from es import CMAES, OpenES
 
 from open_loop.meta_openloop import CpgRbfNet
 import open_loop.user_config as conf
@@ -35,7 +35,7 @@ def rollout(env, render=False):
     obs = env.reset()
     obss, acts, rews, next_obss, terminals, image_obss = [], [], [], [], [], []
 
-    for step in range(100):
+    for step in range(200):
         if render:
             if hasattr(env, 'sim'):
                 image_obss.append(env.sim.render(camera_name='track', height=500, width=500)[::-1])
@@ -98,9 +98,23 @@ class Traj_Trainer():
         self.es_solver = CMAES(
             num_params=self.trajectory_generator.num_params,
             popsize=self.config['popsize'],
-            sigma_init=0.1,
+            sigma_init=0.01,
             weight_decay=0.01
         )
+
+        # self.es_solver = OpenES(
+        #     num_params=self.trajectory_generator.num_params,
+        #     popsize=self.config['popsize'],
+        #     sigma_init=0.005,
+        #     sigma_decay=0.99,
+        #     sigma_limit=0.001,
+        #     learning_rate = 0.003,
+        #     learning_rate_decay = 0.999,
+        #     learning_rate_limit = 0.001,
+        #     weight_decay = 0.01,
+        #     rank_fitness = False,
+        #     forget_best = True,
+        # )
 
         # Set random seed (must be set after es_sovler)
         seed = self.config['seed']
@@ -109,14 +123,7 @@ class Traj_Trainer():
         torch.manual_seed(seed)
 
         # simulation timestep, will be used for video saving
-        if 'model' in dir(self.env):
-            self.fps = 1 / self.env.mode.opt.timestep
-        elif 'video.frames_per_second' in self.env.env.metadata.keys():
-            self.fps = self.env.env.metadata['video.frames_per_second']
-        elif 'render_fps' in self.env.env.metadata.keys():
-            self.fps = self.env.env.metadata['render_fps']
-        else:
-            self.fps = 10
+        self.fps=30
         self.config['fps'] = self.fps
 
     def run_trainning_loop(self, n_itr):

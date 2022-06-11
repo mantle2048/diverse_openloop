@@ -1,5 +1,8 @@
 .aim/
 data/
+trajs/
+vae_*
+train_loss*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
