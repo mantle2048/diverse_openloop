@@ -7,14 +7,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch import nn
 from open_loop.user_config import LOCAL_LOG_DIR
-from open_loop.meta_openloop import CpgRbfNet
+from open_loop.trajectory_generator import CpgRbfNet
 from open_loop.vae import VAE
 from reRLs.infrastructure.utils.utils import write_gif, Path
 
 LOCAL_TARJ_DIR = osp.join(LOCAL_LOG_DIR, 'Traj')
 
 def load_AntTraj():
-    traj_dir = osp.join(LOCAL_TARJ_DIR, 'Traj_Ant-v3')
+    traj_dir = osp.join(LOCAL_TARJ_DIR, 'Traj_Ant-v3_0')
     with open(osp.join(traj_dir, 'config.json'), 'r') as fp:
         config = json.load(fp)
     obs_dim, act_dim = 111, 8
@@ -28,7 +28,7 @@ def load_AntTraj():
     return traj_generator
 
 def load_HalfCheetahTraj():
-    traj_dir = osp.join(LOCAL_TARJ_DIR, 'Traj_HalfCheetah-v3')
+    traj_dir = osp.join(LOCAL_TARJ_DIR, 'Traj_HalfCheetah-v3_0')
     with open(osp.join(traj_dir, 'config.json'), 'r') as fp:
         config = json.load(fp)
     obs_dim, act_dim = 17, 6
@@ -42,7 +42,6 @@ def load_HalfCheetahTraj():
     return traj_generator
 
 def rollout(env, traj, length=200, seed=0,render=False):
-    # obs = env.reset(seed=seed)
     obs = env.reset()
     obss, acts, rews, next_obss, terminals, image_obss = [], [], [], [], [], []
     for i in range(length):
@@ -72,9 +71,9 @@ def generate_trajectory(traj_generator):
     for t in base_time:
         base_traj.append(traj_generator.get_action(t))
     base_traj = np.array(base_traj)
-    num_act = len(base_traj)
+    traj_len = len(base_traj)
 
-    gap = num_act // 2
+    gap = traj_len // 2
     alpha = 0.7
 
     init_weight = base_time / base_time[-1] # ∈ [0, 1]
@@ -99,7 +98,12 @@ def run_training_loop(env, traj_generator):
     train_logs = defaultdict(list)
     num_point = int(traj_generator.period / traj_generator.timestep) + 1
     act_dim = traj_generator.num_act
-    vae = VAE(num_point * act_dim, 2, [256, 512, 256], 0.001)
+    vae = VAE(
+        input_size = num_point * act_dim,
+        variable_size = 2,
+        hidden_layers=[256, 512, 256],
+        learning_rate = 0.001
+    )
     batch_size = 32
     for i in range(1, 101):
         rew_list = []

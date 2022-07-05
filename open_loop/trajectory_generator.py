@@ -84,9 +84,6 @@ class RadialBasisFunctionNetwork():
     ):
         self.num_rbf = num_rbf
         self.kernel_func = kernel_func
-        # self.cpg_net = cpg_net
-        # self.period = cpg_net.period
-        # self.timestep = cpg_net.timestep
         self._init_weight(cpg_net)
         self.reset()
 

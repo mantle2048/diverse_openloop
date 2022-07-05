@@ -4,6 +4,7 @@ import reRLs.infrastructure.utils.pytorch_util as ptu
 
 from torch import nn
 from torch import optim
+from torch.optim.lr_scheduler import ExponentialLR
 from typing import List, Dict, Tuple, Union
 from torch.distributions import Normal, MultivariateNormal
 
@@ -62,13 +63,13 @@ class VAE(nn.Module):
 
         super().__init__()
 
-        self.input_size = input_size
+        self.input_size = input_size # [ num_point, act_dim ]
         self.variable_size = variable_size
         self.hidden_layers = hidden_layers
         self.learning_rate = learning_rate
 
         self.encoder_net = build_mlp(
-            input_size,
+            np.prod(input_size),
             variable_size,
             layers=hidden_layers,
             activation='relu',
@@ -80,7 +81,7 @@ class VAE(nn.Module):
 
         self.decoder_net = build_mlp(
             variable_size,
-            input_size,
+            np.prod(input_size),
             layers=hidden_layers,
             activation='relu',
             with_batch_norm=True,
@@ -88,6 +89,7 @@ class VAE(nn.Module):
 
         self.MSELoss = nn.MSELoss()
         self.optimizer = optim.Adam(self.parameters(), lr = learning_rate)
+        self.scheduler = ExponentialLR(self.optimizer, gamma=0.99)
 
         self.apply(init_weight)
 
@@ -121,30 +123,30 @@ class VAE(nn.Module):
         x = x.view(batch_size, -1)
         mu, std = self.encoder(x)
         z = self.sample(mu, std)
-        print(z.detach().numpy().flatten())
         reconstruct_x = self.decoder(z)
 
-        return reconstruct_x, mu, std
+        return reconstruct_x, mu, std, np.mean(z.detach().numpy().flatten())
 
     def update(self, x: np.ndarray, rew_list: List):
         '''
         p = N(mu1,sigma1), q = N(mu2, sigma2)
         KL(p||q) = log(sigma2/sigma1) + (sigma1^2 + (mu1-mu2)^2) / 2*sigma2^2 - 1/2
         '''
+        self.train()
         rews = torch.as_tensor(rew_list)
         normalized_rews = (rews - rews.mean()) / rews.std()
         exp_rews = torch.exp(normalized_rews)
 
-        reconstruct_x, mu, std = self.forward(x)
+        reconstruct_x, mu, std, z_mean = self.forward(x)
 
         x = ptu.from_numpy(x)
         batch_size = x.shape[0]
         x = x.view(batch_size, -1)
 
-        reconstruction_loss = 0.5 * torch.sum((reconstruct_x - x) ** 2, dim=-1)
-        kl_divergence = -0.5 * torch.sum(1 + 2 * std.log() - mu ** 2 - std ** 2, dim = 1)
-        # reconstruction_loss = self.MSELoss(reconstruct_x, x)
-        # kl_divergence = torch.mean(-0.5 * torch.sum(1 + 2 * std.log() - mu ** 2 - std ** 2, dim = 1), dim = 0)
+        # reconstruction_loss = 0.5 * torch.sum((reconstruct_x - x) ** 2, dim=-1)
+        # kl_divergence = -0.5 * torch.sum(1 + 2 * std.log() - mu ** 2 - std ** 2, dim = 1)
+        reconstruction_loss = self.MSELoss(reconstruct_x, x)
+        kl_divergence = torch.mean(-0.5 * torch.sum(1 + 2 * std.log() - mu ** 2 - std ** 2, dim = 1), dim = 0)
 
         # elbo_loss = torch.mean((reconstruction_loss + kl_divergence) * exp_rews)
         elbo_loss = torch.mean((reconstruction_loss + kl_divergence))
@@ -152,28 +154,31 @@ class VAE(nn.Module):
         self.optimizer.zero_grad()
         elbo_loss.backward()
         self.optimizer.step()
+        self.scheduler.step()
 
         train_log = {}
         train_log['elbo_loss'] = elbo_loss.item()
         train_log['reconstruction_loss'] = torch.mean(reconstruction_loss).item()
         train_log['kl_divergence'] = torch.mean(kl_divergence).item()
+        train_log['z_mean'] = z_mean
 
         return train_log
 
-    def generate(self, x: np.ndarray):
+    def generate(self, z: np.ndarray):
 
-        x = ptu.from_numpy(x)
-        if len(x.shape) > 1:
-            batch_size = x.shape[0]
+        self.eval()
+        z = ptu.from_numpy(z)
+        if len(z.shape) > 1:
+            batch_size = z.shape[0]
         else:
             batch_size = 1
-        x = x.view(batch_size, -1)
+        z = z.view(batch_size, -1)
 
         with torch.no_grad():
-            mu, std = self.encoder(x)
-            z = self.sample(mu, std)
             reconstruct_x = self.decoder(z)
 
+        # self.input_size = [ num_point, act_dim ]
+        reconstruct_x = np.array([ i.view(*self.input_size).numpy() for i in reconstruct_x ])
         return reconstruct_x
 
     def set_state(self, state_dict):

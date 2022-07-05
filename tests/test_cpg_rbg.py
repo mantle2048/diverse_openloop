@@ -21,7 +21,7 @@ from reRLs.infrastructure.utils.utils import write_gif
 from es import SimpleGA, CMAES, PEPG, OpenES
 
 import open_loop
-from open_loop.meta_openloop import CentralPatternGeneratorNetwork, RadialBasisFunctionNetwork, CpgRbfNet
+from open_loop.trajectory_generator import CentralPatternGeneratorNetwork, RadialBasisFunctionNetwork, CpgRbfNet
 
 plt.rcParams['figure.figsize'] = (10.0, 8.0) # set default size of plots
 plt.rcParams['image.interpolation'] = 'nearest'

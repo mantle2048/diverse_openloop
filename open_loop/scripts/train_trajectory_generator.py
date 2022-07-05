@@ -6,61 +6,23 @@ import gym
 import random
 
 import open_loop
+import open_loop.user_config as conf
 
 from typing import Dict
 from pyvirtualdisplay import Display
 from matplotlib import pyplot as plt
 
-from reRLs.infrastructure.utils import pytorch_util as ptu
-from reRLs.infrastructure.utils.utils import Path, get_pathlength, write_gif
+from open_loop.cma_es import CMAES 
 from reRLs.infrastructure.loggers import setup_logger
-
-from es import CMAES, OpenES
-
-from open_loop.meta_openloop import CpgRbfNet
-import open_loop.user_config as conf
+from open_loop.trajectory_generator import CpgRbfNet
+from open_loop.rollout import WorkerSet, serial_sample, parallel_sample, rollout, rollouts
+from open_loop.envs.make_env import make_env
 from open_loop.envs.wrappers.trajectory_generator_wrapper_env import TrajectoryGeneratorWrapperEnv
 
 # %matplotlib notebook
 # %reload_ext autoreload
 # %autoreload 2
 # -
-def make_env(env_name, seed):
-    env = gym.make(env_name)
-    env.reset(seed=seed)
-    env.action_space.seed(seed)
-    return env
-
-def rollout(env, render=False):
-    obs = env.reset()
-    obss, acts, rews, next_obss, terminals, image_obss = [], [], [], [], [], []
-
-    for step in range(200):
-        if render:
-            if hasattr(env, 'sim'):
-                image_obss.append(env.sim.render(camera_name='track', height=500, width=500)[::-1])
-            else:
-                image_obss.append(env.render(mode='rbg_array'))
-        obss.append(obs)
-
-        # act is dummy for traj generator env
-        act = env.action_space.sample()
-        acts.append(act)
-
-        next_obs, rew, done, _ = env.step(act)
-
-        rews.append(rew)
-        next_obss.append(next_obs)
-
-        rollout_done = done
-        terminals.append(rollout_done)
-
-        if rollout_done:
-            break
-
-    return Path(obss, image_obss, acts, rews, next_obss, terminals)
-
-
 
 class Traj_Trainer():
 
@@ -99,22 +61,7 @@ class Traj_Trainer():
             num_params=self.trajectory_generator.num_params,
             popsize=self.config['popsize'],
             sigma_init=0.01,
-            weight_decay=0.01
         )
-
-        # self.es_solver = OpenES(
-        #     num_params=self.trajectory_generator.num_params,
-        #     popsize=self.config['popsize'],
-        #     sigma_init=0.005,
-        #     sigma_decay=0.99,
-        #     sigma_limit=0.001,
-        #     learning_rate = 0.003,
-        #     learning_rate_decay = 0.999,
-        #     learning_rate_limit = 0.001,
-        #     weight_decay = 0.01,
-        #     rank_fitness = False,
-        #     forget_best = True,
-        # )
 
         # Set random seed (must be set after es_sovler)
         seed = self.config['seed']
@@ -122,14 +69,15 @@ class Traj_Trainer():
         np.random.seed(seed)
         torch.manual_seed(seed)
 
+        self.worker_set = WorkerSet(self.config['popsize'], self.env, self.config)
+
         # simulation timestep, will be used for video saving
         self.fps=30
         self.config['fps'] = self.fps
 
-    def run_trainning_loop(self, n_itr):
+    def run_training_loop(self, n_itr):
 
         self.start_time = time.time()
-        self.total_steps = 0
 
         for itr in range(n_itr):
 
@@ -148,42 +96,34 @@ class Traj_Trainer():
                 self.logtabular = False
 
             solutions = self.es_solver.ask()
-            fitness_list = []
-            paths = []
-            for i in range(self.es_solver.popsize):
-                self.trajectory_generator.set_flat_weight(solutions[i])
-                path = rollout(self.env)
-                paths.append(path)
-                fitness_list.append(path['rew'].sum())
-                self.total_steps += get_pathlength(path)
-            self.es_solver.tell(fitness_list)
+            self.worker_set.sync_weights(solutions)
+            train_log_dict = parallel_sample(self.worker_set)
+            self.es_solver.tell(train_log_dict['ep_rews'])
 
             # first element is the best solution, second element is the best fitness
             best_param, best_fitness, _, _ = self.es_solver.result()
 
             if self.logtabular:
-                self.perform_logging(itr, best_param, best_fitness, paths)
+                self.perform_logging(itr, best_param, best_fitness, train_log_dict)
 
                 if self.config['save_params']:
                     self.logger.save_itr_params(itr, self.trajectory_generator.get_state())
 
         self.env.close()
+        self.worker_set.close()
         self.logger.close()
 
-    def perform_logging(self, itr, best_param, best_fitness, paths):
+    def perform_logging(self, itr, best_param, best_fitness, train_log_dict):
 
         if itr == 0:
             self.logger.log_variant('config.json', self.config)
 
-        self.trajectory_generator.set_flat_weight(best_param)
+        self.worker_set.local_worker.set_weight(best_param)
 
-        eval_paths = []
-        for _ in range(10):
-            eval_paths.append(rollout(self.env))
+        eval_log_dict = serial_sample(self.worker_set) # serial sample from local worker
 
         if self.logvideo:
-            video_paths = [rollout(self.env, render=True) for _ in range(2)]
-
+            video_paths = rollouts(2, self.worker_set.local_worker.env, render=True)
             self.logger.log_paths_as_videos(
                 video_paths, itr, fps=self.fps, video_title='rollout'
             )
@@ -193,19 +133,14 @@ class Traj_Trainer():
             ax_2 = self.trajectory_generator.plot_curve(fig.add_subplot(122))
             self.logger.log_figure(fig, 'trajectory_curve', itr)
 
-        train_ep_lens = [get_pathlength(path) for path in paths]
-        eval_ep_lens = [get_pathlength(path) for path in eval_paths]
-        train_returns = [path["rew"].sum() for path in paths]
-        eval_returns = [path["rew"].sum() for path in eval_paths]
-
         self.logger.record_tabular("Itr", itr)
+        self.logger.record_tabular("TotalEnvInteracts", itr)
 
-        self.logger.record_tabular_misc_stat("TrainReward", train_returns)
-        self.logger.record_tabular_misc_stat("EvalReward", eval_returns)
-        self.logger.record_tabular("TotalEnvInteracts", self.total_steps)
+        self.logger.record_tabular_misc_stat("TrainReward", train_log_dict['ep_rews'])
+        self.logger.record_tabular_misc_stat("EvalReward", eval_log_dict['ep_rews'])
         self.logger.record_tabular("BestReturn", best_fitness)
-        self.logger.record_tabular("TrainEpLen", np.mean(train_ep_lens))
-        self.logger.record_tabular("EvalEpLen", np.mean(eval_ep_lens))
+        self.logger.record_tabular("TrainEpLen", np.mean(train_log_dict['ep_lens']))
+        self.logger.record_tabular("EvalEpLen", np.mean(eval_log_dict['ep_lens']))
         self.logger.record_tabular("Time", (time.time() - self.start_time) / 60)
 
         self.logger.dump_tabular(with_prefix=True, with_timestamp=False)
@@ -230,6 +165,7 @@ def get_parser():
     parser.add_argument('--video_log_freq', type=int, default=-1)
     parser.add_argument('--tabular_log_freq', type=int, default=1)
     parser.add_argument('--save_params', action='store_true')
+    parser.add_argument('--n_path',  type=int, default=5, help="the num of trajs to eval solution")
 
     # cpg_rbf args
     parser.add_argument('--amplitude', '-A', type=float, default=0.2)
@@ -250,7 +186,7 @@ def main():
     config = vars(args)
 
     trainer = Traj_Trainer(config)
-    trainer.run_trainning_loop(config['n_itr'])
+    trainer.run_training_loop(config['n_itr'])
 
 if __name__ == '__main__':
     main()

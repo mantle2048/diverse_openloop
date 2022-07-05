@@ -40,9 +40,6 @@ class TrajectoryGeneratorWrapperEnv(gym.Wrapper):
 
         self._step_counter = 0
 
-    def __getattr__(self, attr):
-        return getattr(self.env, attr)
-
     def reset(self):
         if getattr(self.trajectory_generator, 'reset'):
             self.trajectory_generator.reset()
@@ -71,7 +68,6 @@ class TrajectoryGeneratorWrapperEnv(gym.Wrapper):
             self.get_time_since_reset())
 
         new_action = traj_action
-        # new_action = traj_action + action
         original_observation, reward, done, info = self.env.step(new_action)
         self._step_counter += 1
 
@@ -82,4 +78,3 @@ class TrajectoryGeneratorWrapperEnv(gym.Wrapper):
 
     def _modify_observation(self, observation):
         return self.trajectory_generator.get_observation(observation)
-
