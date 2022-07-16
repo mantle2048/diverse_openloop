@@ -28,7 +28,8 @@ def init_weights(m: nn.Module, gain: float = 1):
         Orthogonal initialization (used in PPO and A2C)
     """
     if isinstance(m, (nn.Linear, nn.Conv2d)):
-        torch.nn.init.xavier_normal_(m.weight, gain=gain)
+        # torch.nn.init.xavier_normal_(m.weight, gain=gain)
+        torch.nn.init.normal_(m.weight)
         if m.bias is not None:
             m.bias.data.fill_(0.00)
 
@@ -156,6 +157,7 @@ class CpgRbfNet(nn.Module):
         x = self.cpg.get_action(t)
         raw_action = self.rbf.get_action(x)
         action = self.linear(ptu.from_numpy(raw_action))
+        action *= 3
         return ptu.to_numpy(action)
 
     def get_observation(self, input_observation):

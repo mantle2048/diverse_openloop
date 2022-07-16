@@ -16,9 +16,12 @@ ROLLOUT_LEN = 200
 
 class Worker():
 
-    def __init__(self, env, worker_id, config: Dict):
+    def __init__(self, env_maker, env_wrapper,  worker_id, config: Dict):
+        import pybullet_envs  # need this import so pybullet env is registered
+
         self.worker_id = worker_id
-        self.env = deepcopy(env)
+        self.env = env_maker(config['env_name'], config['seed'])
+        self.env = env_wrapper(self.env, config)
         self.config = config
         self.n_path = config['n_path']
         np.random.seed(config['seed'] + worker_id)
@@ -26,11 +29,15 @@ class Worker():
         random.seed(config['seed'] + worker_id)
         torch.manual_seed(config['seed'] + worker_id)
 
-    def sample(self, traj = None, render=False) -> Dict:
+    def sample(self, trajs = None, render=False):
 
-        paths = rollouts(self.n_path, self.env, traj, render)
-        ep_len = np.mean([get_pathlength(path) for path in paths])
-        ep_rew = np.mean([path["rew"].sum() for path in paths])
+        if trajs is None:
+            paths = rollouts(self.n_path, self.env, render=render)
+        else:
+            paths = traj_rollouts(trajs, self.env, render=render)
+
+        ep_len = [get_pathlength(path) for path in paths]
+        ep_rew = [path["rew"].sum() for path in paths]
         return (ep_len, ep_rew)
 
     def set_weight(self, weight):
@@ -46,14 +53,16 @@ class Worker():
 
 class WorkerSet():
 
-    def __init__(self, num_workers, env, config: Dict):
+    def __init__(self, num_workers, env_maker, env_wrapper, config: Dict):
         self.num_workers = num_workers
         self.config = config
-        self.env = env
+        self.env_maker = env_maker
+        self.env_wrapper = env_wrapper
 
         self.local_worker = self._make_worker(
             cls = Worker,
-            env = self.env,
+            env_maker = self.env_maker,
+            env_wrapper = self.env_wrapper,
             worker_id = 0,
             config = self.config
         ) 
@@ -68,7 +77,6 @@ class WorkerSet():
             to_worker.set_weight.remote(weight)
 
     def close(self):
-        self.env.close()
         try:
             self.local_worker.close()
             tids = [w.close.remote() for w in self.remote_workers]
@@ -85,7 +93,8 @@ class WorkerSet():
             [
                 self._make_worker(
                     cls = Worker.as_remote().remote,
-                    env = self.env,
+                    env_maker = self.env_maker,
+                    env_wrapper = self.env_wrapper,
                     worker_id = old_num_workers + i + 1,
                     config = self.config
                 )
@@ -93,8 +102,15 @@ class WorkerSet():
             ]
         )
 
-    def _make_worker(self, cls: Callable, env, worker_id, config: Dict):
-        worker = cls(env, worker_id, config)
+    def _make_worker(
+        self,
+        cls: Callable,
+        env_maker,
+        env_wrapper,
+        worker_id,
+        config: Dict
+    ):
+        worker = cls(env_maker, env_wrapper, worker_id, config)
         return worker
 
 def rollout(env, traj=None, render=False):
@@ -108,9 +124,9 @@ def rollout(env, traj=None, render=False):
     for step in range(ROLLOUT_LEN):
         if render:
             if hasattr(env, 'sim'):
-                image_obss.append(env.sim.render(camera_name='track', height=500, width=500)[::-1])
+                image_obss.append(env.sim.render(camera_name='angle45', height=500, width=500)[::-1])
             else:
-                image_obss.append(env.render(mode='rbg_array'))
+                image_obss.append(env.render(mode='rgb_array'))
         obss.append(obs)
 
         # act is dummy for traj generator env
@@ -141,21 +157,19 @@ def traj_rollouts(trajs, env, render=False):
     paths = [rollout(env, traj, render) for traj in trajs]
     return paths
 
-def serial_sample(worker_set: WorkerSet, trajs = None, render = False):
+def local_sample(worker_set: WorkerSet, trajs = None, render = False):
 
-    n_path = len(worker_set.remote_workers)
     worker = worker_set.local_worker
 
     if trajs is None:
-        logs = [ worker.sample(render=render) for _ in range(n_path) ]
+        logs = [worker.sample(render=render)]
     else:
-        assert len(trajs) == n_path, "num traj must equal num workers"
-        logs = [ worker.sample(traj=traj, render=render) for traj in trajs ]
+        logs = [ worker.sample(trajs=trajs, render=render)]
 
     log_dict = defaultdict(list)
     for (ep_len, ep_rew) in logs:
-        log_dict['ep_lens'].append(ep_len)
-        log_dict['ep_rews'].append(ep_rew)
+        log_dict['ep_lens'] += ep_len
+        log_dict['ep_rews'] += ep_rew
     return log_dict
 
 def parallel_sample(worker_set: WorkerSet, trajs = None, render = False):
@@ -171,9 +185,9 @@ def parallel_sample(worker_set: WorkerSet, trajs = None, render = False):
         )
 
     log_dict = defaultdict(list)
-    for (ep_len, ep_rew) in logs:
-        log_dict['ep_lens'].append(ep_len)
-        log_dict['ep_rews'].append(ep_rew)
+    for (one_worker_ep_lens, one_worker_ep_rews) in logs:
+        log_dict['ep_lens'].append(np.mean(one_worker_ep_lens))
+        log_dict['ep_rews'].append(np.mean(one_worker_ep_rews))
     return log_dict
 
 

@@ -6,19 +6,34 @@ from open_loop.scripts.train_trajectory_generator import get_parser, main, Traj_
 # %autoreload 2
 
 def test_run(seed=1):
-    env_name = 'HalfCheetah-v3'
+    '''
+    Minitaur: dt:0.002 
+    HalfCheetah: dt:0.05
+    Ant: dt:0.05
+    Swimmer: dt:0.04
+    '''
+    env_set = [
+        "HalfCheetah-v3",
+        "Ant-v3",
+        "MinitaurBulletEnv-v0",
+        "AntBulletEnv-v0",
+        'cheetah_run',
+        'MinitaurTrottingEnv-v0',
+        'MinitaurReactiveEnv-v0',
+    ]
+    env_name = env_set[-2]
     
     arg_list =  [
         '--n_itr',
-        '2',
+        '501',
         '--video_log_freq',
-        '-1',
+        '50',
         '--seed',
         f'{seed}',
         '--amplitude',
         '1',
         '--frequency',
-        '1',
+        '1.0',
         '--num_rbf',
         '100',
         '--env_name',
@@ -27,7 +42,9 @@ def test_run(seed=1):
         f'Traj_{env_name}',
         '--save_params',
         '--popsize',
-        '16'
+        '10',
+        '--n_path',
+        '1',
     ]
     args = get_parser().parse_args(args=arg_list) # add 'args=[]' in ( ) for useage of jupyter notebook
     config = vars(args)

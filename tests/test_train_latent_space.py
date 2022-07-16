@@ -3,7 +3,6 @@ import gym
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from open_loop.transfer import *
 from open_loop.vae import *
 from reRLs.infrastructure.utils.utils import Path, write_gif
 from open_loop.scripts.train_latent_space import get_parser, main, Latent_Trainer
@@ -26,15 +25,31 @@ sns.set(style='whitegrid', palette='tab10', font_scale=1.5)
 # -
 
 def test_trainer(seed=1):
-    env_name = 'Ant-v3'
-    
+    env_set = [
+        "HalfCheetah-v3",
+        "Ant-v3",
+        "MinitaurBulletEnv-v0",
+        "AntBulletEnv-v0",
+        'cheetah_run',
+        'MinitaurTrottingEnv-v0',
+        'MinitaurReactiveEnv-v0',
+    ]
+    env_name = env_set[2]
     arg_list =  [
+        '--alpha',
+        '0.7',
         '--n_itr',
-        '1',
+        '11',
         '--exp_id',
         '0',
         '--video_log_freq',
         '1',
+        '--seed',
+        '1',
+        '--lr',
+        '0.001',
+        '--n_path',
+        '11',
         '--env_name',
         f'{env_name}',
         '--exp_prefix',

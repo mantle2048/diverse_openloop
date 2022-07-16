@@ -30,6 +30,7 @@ class TrajectoryGeneratorWrapperEnv(gym.Wrapper):
             )
 
         self.trajectory_generator = trajectory_generator
+        self.max_act = self.env.action_space.high[0]
 
         # The trajectory generator can subsume the action/observation space.
         if hasattr(trajectory_generator, 'observation_space'):
@@ -67,7 +68,7 @@ class TrajectoryGeneratorWrapperEnv(gym.Wrapper):
         traj_action = self.trajectory_generator.get_action(
             self.get_time_since_reset())
 
-        new_action = traj_action
+        new_action = traj_action.clip(-self.max_act, self.max_act)
         original_observation, reward, done, info = self.env.step(new_action)
         self._step_counter += 1
 

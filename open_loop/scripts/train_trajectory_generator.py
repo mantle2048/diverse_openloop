@@ -4,6 +4,7 @@ import torch
 import time
 import gym
 import random
+import pybullet_envs
 
 import open_loop
 import open_loop.user_config as conf
@@ -14,9 +15,7 @@ from matplotlib import pyplot as plt
 
 from open_loop.cma_es import CMAES 
 from reRLs.infrastructure.loggers import setup_logger
-from open_loop.trajectory_generator import CpgRbfNet
-from open_loop.rollout import WorkerSet, serial_sample, parallel_sample, rollout, rollouts
-from open_loop.envs.make_env import make_env
+from open_loop.rollout import WorkerSet, local_sample, parallel_sample, rollout, rollouts
 from open_loop.envs.wrappers.trajectory_generator_wrapper_env import TrajectoryGeneratorWrapperEnv
 
 # %matplotlib notebook
@@ -27,24 +26,20 @@ from open_loop.envs.wrappers.trajectory_generator_wrapper_env import TrajectoryG
 class Traj_Trainer():
 
     def __init__(self, config: Dict):
+
+        # first create a virtual display and then import dmc suite
+        # to prevent the warning of GLFW
+        self.virtual_disp = Display(visible=False, size=(1400,900))
+        self.virtual_disp.start()
+        from open_loop.envs.make_env import make_env, wrap_env
+
         self.config = config
 
-        self.env = make_env(config['env_name'], config['seed'])
-        self.config['num_act'] = self.env.action_space.shape[0]
-        self.config['timestep'] = self.env.dt
+        self.dummy_env = make_env(config['env_name'], config['seed'])
+        self.config['num_act'] = self.dummy_env.action_space.shape[0]
+        self.config['timestep'] = self.dummy_env.dt
+        self.dummy_env.close()
 
-        sin_config = {
-            'amplitude': config['amplitude'],
-            'theta': config['theta'],
-            'frequency': config['frequency'],
-        }
-        self.trajectory_generator = CpgRbfNet(
-            sin_config, config['timestep'], config['num_rbf'], config['num_act']
-        )
-
-        self.env = TrajectoryGeneratorWrapperEnv(
-            self.env, self.trajectory_generator
-        )
 
         self.logger = setup_logger(
             exp_prefix=config['exp_prefix'],
@@ -54,11 +49,9 @@ class Traj_Trainer():
             base_log_dir=config['base_log_dir']
         )
 
-        self.virtual_disp = Display(visible=False, size=(1400,900))
-        self.virtual_disp.start()
 
         self.es_solver = CMAES(
-            num_params=self.trajectory_generator.num_params,
+            num_params=self.config['num_act'] * self.config['num_rbf'],
             popsize=self.config['popsize'],
             sigma_init=0.01,
         )
@@ -69,7 +62,9 @@ class Traj_Trainer():
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        self.worker_set = WorkerSet(self.config['popsize'], self.env, self.config)
+        self.worker_set = WorkerSet(self.config['popsize'], make_env, wrap_env, self.config)
+        self.env = self.worker_set.local_worker.env
+        self.trajectory_generator = self.worker_set.local_worker.env.trajectory_generator
 
         # simulation timestep, will be used for video saving
         self.fps=30
@@ -102,28 +97,27 @@ class Traj_Trainer():
 
             # first element is the best solution, second element is the best fitness
             best_param, best_fitness, _, _ = self.es_solver.result()
+            # set best param to local worker
+            self.trajectory_generator.set_flat_weight(best_param)
 
             if self.logtabular:
-                self.perform_logging(itr, best_param, best_fitness, train_log_dict)
+                self.perform_logging(itr, best_fitness, train_log_dict)
 
                 if self.config['save_params']:
                     self.logger.save_itr_params(itr, self.trajectory_generator.get_state())
 
-        self.env.close()
         self.worker_set.close()
         self.logger.close()
 
-    def perform_logging(self, itr, best_param, best_fitness, train_log_dict):
+    def perform_logging(self, itr, best_fitness, train_log_dict):
 
         if itr == 0:
             self.logger.log_variant('config.json', self.config)
 
-        self.worker_set.local_worker.set_weight(best_param)
-
-        eval_log_dict = serial_sample(self.worker_set) # serial sample from local worker
+        eval_log_dict = local_sample(self.worker_set) # eval best param using local worker
 
         if self.logvideo:
-            video_paths = rollouts(2, self.worker_set.local_worker.env, render=True)
+            video_paths = rollouts(1, self.env, render=True)
             self.logger.log_paths_as_videos(
                 video_paths, itr, fps=self.fps, video_title='rollout'
             )
