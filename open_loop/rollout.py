@@ -157,6 +157,52 @@ def traj_rollouts(trajs, env, render=False):
     paths = [rollout(env, traj, render) for traj in trajs]
     return paths
 
+def rollout_with_info(env, traj=None, render=False):
+    if traj is None:
+        assert isinstance(env, TrajectoryGeneratorWrapperEnv), \
+            "must provide action sqeuence for env without traj generator"
+
+    obs = env.reset()
+    obss, acts, rews, next_obss, terminals, image_obss = [], [], [], [], [], []
+    path_info = []
+
+    for step in range(ROLLOUT_LEN):
+        if render:
+            if hasattr(env, 'sim'):
+                image_obss.append(env.sim.render(camera_name='angle45', height=500, width=500)[::-1])
+            else:
+                image_obss.append(env.render(mode='rgb_array'))
+        obss.append(obs)
+
+        # act is dummy for traj generator env
+        if traj is not None:
+            act = traj[step % len(traj)].clip(-1, 1)
+        else:
+            act = env.action_space.sample()
+        acts.append(act)
+
+        next_obs, rew, done, info = env.step(act)
+
+        rews.append(rew)
+        next_obss.append(next_obs)
+        path_info.append(info)
+
+        rollout_done = done
+        terminals.append(rollout_done)
+
+        if rollout_done:
+            break
+
+    return Path(obss, image_obss, acts, rews, next_obss, terminals), path_info
+
+def traj_rollouts_with_info(trajs, env, render=False):
+    paths, paths_info = [], []
+    for traj in trajs:
+        path, path_info = rollout_with_info(env, traj, render)
+        paths.append(path)
+        paths_info.append(path_info)
+    return paths, paths_info
+
 def local_sample(worker_set: WorkerSet, trajs = None, render = False):
 
     worker = worker_set.local_worker

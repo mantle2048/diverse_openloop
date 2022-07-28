@@ -58,7 +58,7 @@ class VAE(nn.Module):
         input_size,
         variable_size,
         hidden_layers,
-        learning_rate
+        learning_rate = 0.001,
     ):
 
         super().__init__()
@@ -177,7 +177,6 @@ class VAE(nn.Module):
         with torch.no_grad():
             reconstruct_x = self.decoder(z)
 
-        # self.input_size = [ num_point, act_dim ]
         reconstruct_x = np.array([ i.view(*self.input_size).numpy() for i in reconstruct_x ])
         return reconstruct_x
 

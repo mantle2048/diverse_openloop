@@ -1,13 +1,15 @@
 import os
 import os.path as osp
 import seaborn as sns
+import glob
 import pandas as pd
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt
 from scipy.ndimage import uniform_filter1d
 
 from open_loop.user_config import LOCAL_IMG_DIR, LOCAL_LOG_DIR
-from open_loop.utils import load_trajectory_generator 
+from open_loop.utils import load_trajectory_generator, load_vae_and_save_generated_trajs
 
 plt.rcParams['figure.figsize'] = (10.0, 8.0) # set default size of plots
 plt.rcParams['image.interpolation'] = 'nearest'
@@ -35,6 +37,7 @@ LOCAL_TARJ_DIR = osp.join(LOCAL_LOG_DIR, 'Traj')
 
 def generate_trajectory(traj_generator, num_point = 301, alpha=0.7):
 
+    act_dim = traj_generator.num_act
     base_time = np.linspace(0, traj_generator.period, 101)
     base_traj = traj_generator.get_action(base_time)
     traj_len = len(base_traj)
@@ -45,7 +48,7 @@ def generate_trajectory(traj_generator, num_point = 301, alpha=0.7):
     init_weight[0:gap+ 1] = alpha * init_weight[0:gap+1]
     init_weight[-gap:] = init_weight[0:gap][::-1]
 
-    transpose_weight = np.random.randn(8,8).clip(-0.5,0.5)
+    transpose_weight = np.random.randn(act_dim, act_dim).clip(-0.7,0.7)
     epsilon = base_traj @ transpose_weight
     traj = base_traj + init_weight[:, None] * epsilon
     traj = np.concatenate([traj, traj[1:], traj[1:]] ,axis=0)
@@ -56,15 +59,64 @@ def generate_trajectories(batch_size, *args, **kwargs):
     trajs = [generate_trajectory(*args, **kwargs) for _ in range(batch_size)]
     return trajs
 
-def adjust_lightness(color, amount=0.5):
-    import matplotlib.colors as mc
-    import colorsys
-    try:
-        c = mc.cnames[color]
-    except:
-        c = color
-    c = colorsys.rgb_to_hls(*mc.to_rgb(c))
-    return colorsys.hls_to_rgb(c[0], max(0, min(1, amount * c[1])), c[2])
+def plot_x_y_position(env_name, idx, itr, n_path=11, resample=False):
+    assert 'HalfCheetah' not in env_name, "HalfCheetah has no x_y position!"
+    paths_name, paths_info_name = f'itr_{itr}_paths', f'itr_{itr}_paths_info'
+    rollout_dir = osp.join(LOCAL_TARJ_DIR, f'Vae_{env_name}_{idx}', 'rollout')
+
+    if resample or not glob.glob(osp.join(rollout_dir, paths_info_name)):
+        load_vae_and_save_generated_trajs(env_name, idx, itr, n_path)
+    zs = np.linspace(-2, 2, n_path)
+
+    with open(osp.join(rollout_dir, paths_info_name), 'rb') as f:
+        paths_info = pickle.load(f)
+
+    # create a figure for plot
+    fig, ax = plt.subplots(1, 1,)
+
+    for z, path_info in zip(zs, paths_info):
+        x_position, y_position = [], []
+        for info in path_info:
+            x_position.append(info['x_position'])
+            y_position.append(info['y_position'])
+        ax.plot(x_position, y_position, label=f'z={z:.2f}')
+
+    # ax.legend()
+    ax.set_title(env_name)
+    ax.set_xlabel("x position")
+    ax.set_ylabel("y position")
+
+def plot_x_y_velocity(env_name, idx, itr, n_path=11, resample=False):
+    assert 'HalfCheetah' not in env_name, "HalfCheetah has no x_y position!"
+    paths_name, paths_info_name = f'itr_{itr}_paths', f'itr_{itr}_paths_info'
+    rollout_dir = osp.join(LOCAL_TARJ_DIR, f'Vae_{env_name}_{idx}', 'rollout')
+
+    if resample or not glob.glob(osp.join(rollout_dir, paths_info_name)):
+        load_vae_and_save_generated_trajs(env_name, idx, itr, n_path)
+    zs = np.linspace(-2, 2, n_path)
+
+    with open(osp.join(rollout_dir, paths_info_name), 'rb') as f:
+        paths_info = pickle.load(f)
+
+    # create a figure for plot
+    fig, ax = plt.subplots(2, 1)
+
+    for z, path_info in zip(zs, paths_info):
+        x_position, y_position = [], []
+        for info in path_info:
+            x_position.append(info['x_velocity'])
+            y_position.append(info['y_velocity'])
+        timestep = np.arange(len(x_position))
+        x_position = uniform_filter1d(x_position, size=51)
+        y_position = uniform_filter1d(y_position, size=51)
+        ax[0].plot(timestep, x_position, label=f'z={z:.2f}')
+        ax[1].plot(timestep, y_position, label=f'z={z:.2f}')
+
+    # ax.legend()
+    ax[1].set_xlabel("timestep")
+    ax[0].set_ylabel("x velocity")
+    ax[1].set_ylabel("y velocity")
+    ax[0].set_title(env_name)
 
 def plot_prior_distribution(env_name, exp_id):
 
@@ -74,18 +126,28 @@ def plot_prior_distribution(env_name, exp_id):
         ('#4c72b2', '#a3c9f4'), #Blue light Blut
         ('#54a86e', '#92e4a0'), #GREEN, light Green
     ]
+
+    actuator_name = {
+        "Ant-v3": ['front_left_leg_hip', 'front_left_leg_angle'],
+        "HalfCheetah-v3": ['front thigh', 'front shin', 'front foot'],
+        "MinitaurBulletEnv-v0" : ['front_left_leg_hip', 'front_left_leg_angle'],
+        "MinitaurReactiveEnv-v0": ['front_left_leg_hip', 'front_left_leg_angle'],
+        }
+
     # config
     batch_size = 8
     num_point = 301
-    alpha = 1.2
-    np.random.seed(4)
+    alpha = 1.0
+    np.random.seed(21)
+
+    # load trajectory generator
     traj_generator = load_trajectory_generator(env_name, exp_id)
 
     # create a figure for plot
-    fig, ax = plt.subplots(1, 1, figsize=(8,4.3))
+    fig, ax = plt.subplots(1, 1, figsize=(9.5,5))
     timestep = np.arange(0, num_point)
 
-    for actuator in range(0, 3):
+    for actuator, name in enumerate(actuator_name[env_name]):
         # get base traj
         base_time = np.linspace(0, traj_generator.period * (num_point // 100), num_point)
         base_traj = traj_generator.get_action(base_time)[:, actuator]
@@ -96,8 +158,28 @@ def plot_prior_distribution(env_name, exp_id):
         torque = trajs[:, :, actuator]
 
         # plot
-        ax.plot(timestep, base_traj, zorder=20, lw = 4, color = curve_color[actuator][0])
-        ax.plot(timestep, torque.transpose(), lw = 2,  color = curve_color[actuator][1])
+        ax.plot(
+            timestep, base_traj,
+            zorder = (actuator + 1) * 10, lw = 4,
+            color = curve_color[actuator][0], label = name
+        )
+        ax.plot(
+            timestep, torque.transpose(),
+            lw = 2, color = curve_color[actuator][1]
+        )
+
+    # figure config
+    ax.set_xlabel("TimeStep")
+    ax.set_ylabel("Torque")
+    ax.set_title(env_name)
+    ax.legend(
+        loc='lower center',
+        ncol=4,
+        handlelength=2,
+        borderaxespad=0.,
+        prop={'size': 14},
+        mode='expand'
+    )
 
 def plot_traj_gait_curve(env_name, exp_id):
 
@@ -115,8 +197,8 @@ def plot_traj_gait_curve(env_name, exp_id):
             ['back_right_leg_hip', 'back_right_leg_angle'],
         ),
         "HalfCheetah-v3": (
-            ['back thigh', 'back shin', 'back foot'],
             ['front thigh', 'front shin', 'front foot'],
+            ['back thigh', 'back shin', 'back foot'],
         ),
         "MinitaurBulletEnv-v0" : (
             ['front_left_leg_hip', 'front_left_leg_angle'],

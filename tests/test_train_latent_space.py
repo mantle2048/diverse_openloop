@@ -29,23 +29,20 @@ def test_trainer(seed=1):
         "HalfCheetah-v3",
         "Ant-v3",
         "MinitaurBulletEnv-v0",
-        "AntBulletEnv-v0",
-        'cheetah_run',
-        'MinitaurTrottingEnv-v0',
         'MinitaurReactiveEnv-v0',
     ]
-    env_name = env_set[2]
+    env_name = env_set[-1]
     arg_list =  [
         '--alpha',
-        '0.7',
+        '1.0',
         '--n_itr',
-        '11',
+        '201',
         '--exp_id',
         '0',
         '--video_log_freq',
         '1',
         '--seed',
-        '1',
+        '2',
         '--lr',
         '0.001',
         '--n_path',
