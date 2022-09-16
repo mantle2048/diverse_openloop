@@ -21,7 +21,4 @@
   
   (Gif, select latent variable z∈[-2,2])
   
-  <img src="figures/ant_skill.gif" alt="drawing" width="400"/>
-
-
-  
+  <img src="figures/ant_skill.gif" alt="drawing" width="500"/>
