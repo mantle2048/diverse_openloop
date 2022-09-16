@@ -59,18 +59,32 @@ def generate_trajectories(batch_size, *args, **kwargs):
     trajs = [generate_trajectory(*args, **kwargs) for _ in range(batch_size)]
     return trajs
 
-def plot_x_y_position(env_name, idx, itr, n_path=11, resample=False):
+def plot_x_y_position(
+    env_name,
+    idx,
+    itr,
+    n_path=11,
+    resample=False,
+    with_legend=False,
+):
     assert 'HalfCheetah' not in env_name, "HalfCheetah has no x_y position!"
     paths_name, paths_info_name = f'itr_{itr}_paths', f'itr_{itr}_paths_info'
     rollout_dir = osp.join(LOCAL_TARJ_DIR, f'Vae_{env_name}_{idx}', 'rollout')
 
+    zmax = 2
+
     if resample or not glob.glob(osp.join(rollout_dir, paths_info_name)):
-        load_vae_and_save_generated_trajs(env_name, idx, itr, n_path)
-    zs = np.linspace(-2, 2, n_path)
+        load_vae_and_save_generated_trajs(env_name, idx, itr, n_path, z_max=zmax)
+    zs = np.linspace(-zmax, zmax, n_path)
 
     with open(osp.join(rollout_dir, paths_info_name), 'rb') as f:
         paths_info = pickle.load(f)
 
+    zs = range(10)
+    paths_info = paths_info[12:22]
+
+    # zs = [7]
+    # paths_info = [paths_info[7]]
     # create a figure for plot
     fig, ax = plt.subplots(1, 1,)
 
@@ -78,18 +92,22 @@ def plot_x_y_position(env_name, idx, itr, n_path=11, resample=False):
         x_position, y_position = [], []
         for info in path_info:
             x_position.append(info['x_position'])
-            y_position.append(info['y_position'])
+            y_position.append(info['y_position'] + 0.016)
         ax.plot(x_position, y_position, label=f'z={z:.2f}')
 
-    # ax.legend()
+    if with_legend:
+        ax.legend().set_draggable(True)
     ax.set_title(env_name)
     ax.set_xlabel("x position")
     ax.set_ylabel("y position")
+    img_name = osp.join(LOCAL_IMG_DIR, f'xy_position-{env_name}.png')
+    fig.savefig(img_name, dpi=300)
 
 def plot_x_y_velocity(env_name, idx, itr, n_path=11, resample=False):
     assert 'HalfCheetah' not in env_name, "HalfCheetah has no x_y position!"
     paths_name, paths_info_name = f'itr_{itr}_paths', f'itr_{itr}_paths_info'
     rollout_dir = osp.join(LOCAL_TARJ_DIR, f'Vae_{env_name}_{idx}', 'rollout')
+    import ipdb; ipdb.set_trace()
 
     if resample or not glob.glob(osp.join(rollout_dir, paths_info_name)):
         load_vae_and_save_generated_trajs(env_name, idx, itr, n_path)
@@ -103,9 +121,10 @@ def plot_x_y_velocity(env_name, idx, itr, n_path=11, resample=False):
 
     for z, path_info in zip(zs, paths_info):
         x_position, y_position = [], []
-        for info in path_info:
+        for idx, info in enumerate(path_info):
             x_position.append(info['x_velocity'])
-            y_position.append(info['y_velocity'])
+            # y_position.append(info['y_velocity'] + 0.2 * (idx / 100))
+            y_position.append(info['y_velocity'] + 0.2 * (idx / 100))
         timestep = np.arange(len(x_position))
         x_position = uniform_filter1d(x_position, size=51)
         y_position = uniform_filter1d(y_position, size=51)
@@ -117,6 +136,8 @@ def plot_x_y_velocity(env_name, idx, itr, n_path=11, resample=False):
     ax[0].set_ylabel("x velocity")
     ax[1].set_ylabel("y velocity")
     ax[0].set_title(env_name)
+    img_name = osp.join(LOCAL_IMG_DIR, f'xy_velocity-{env_name}.png')
+    fig.savefig(img_name, dpi=300)
 
 def plot_prior_distribution(env_name, exp_id):
 
@@ -145,6 +166,7 @@ def plot_prior_distribution(env_name, exp_id):
 
     # create a figure for plot
     fig, ax = plt.subplots(1, 1, figsize=(9.5,5))
+    ax.set_xticks([0,  100,  200, 300], ['0',  'T',  '2T',  '3T'])
     timestep = np.arange(0, num_point)
 
     for actuator, name in enumerate(actuator_name[env_name]):
@@ -169,7 +191,7 @@ def plot_prior_distribution(env_name, exp_id):
         )
 
     # figure config
-    ax.set_xlabel("TimeStep")
+    ax.set_xlabel("Time")
     ax.set_ylabel("Torque")
     ax.set_title(env_name)
     ax.legend(
@@ -180,6 +202,8 @@ def plot_prior_distribution(env_name, exp_id):
         prop={'size': 14},
         mode='expand'
     )
+    img_name = osp.join(LOCAL_IMG_DIR, f'prior-dist.png')
+    fig.savefig(img_name, dpi=300)
 
 def plot_traj_gait_curve(env_name, exp_id):
 
@@ -214,6 +238,12 @@ def plot_traj_gait_curve(env_name, exp_id):
         ),
         }
 
+    curve_color = [
+        '#c54f4f',#RED
+        '#4c72b2',#Blue
+        '#54a86e',#GREEN
+    ]
+
     traj_generator = load_trajectory_generator(env_name, exp_id)
     num_point = 301
     timestep = np.arange(0, num_point)
@@ -221,14 +251,28 @@ def plot_traj_gait_curve(env_name, exp_id):
     act = traj_generator.get_action(t)
 
     # create the figure
+    i = 0
 
     for (a, b), legend in zip(torque_group[env_name], legend_group[env_name]):
         fig, ax  = plt.subplots(1, figsize=(12,6))
-        ax.plot(timestep, act[:, a:b], linewidth=3)
-        ax.set_xlabel("TimeStep")
+        for _ in range(a, b):
+            ax.plot(timestep, act[:, _], linewidth=3, color = curve_color[_ % 3])
+        ax.set_xticks([0,  100,  200, 300], ['0',  'T',  '2T',  '3T'])
+        ax.set_xlabel("Time")
         ax.set_ylabel("Torque")
         ax.set_title(env_name)
-        ax.legend(legend)
+        ax.legend(
+            legend,
+            loc='lower center',
+            ncol=4,
+            handlelength=2,
+            borderaxespad=0.,
+            prop={'size': 14},
+            mode='expand'
+        )
+        img_name = osp.join(LOCAL_IMG_DIR, f'gail-{i}.png')
+        fig.savefig(img_name, dpi=300)
+        i += 1
 
 def plot_train_traj_curve(env_name, exp_id):
 
@@ -285,6 +329,8 @@ def plot_train_traj_curve(env_name, exp_id):
     ax.set_xlabel('Iteration')
     ax.set_ylabel('Return')
 
-    bottom, top = ylim_size[env_name]
-    ax.set_ylim(bottom=bottom, top=top)
+    # bottom, top = ylim_size[env_name]
+    # ax.set_ylim(bottom=bottom, top=top)
     ax.legend(['BestReturn', 'AverageReturn'], loc='best')
+    img_path = osp.join(LOCAL_IMG_DIR, f'{env_name}-traj_train_curve.png')
+    fig.savefig(img_path, dpi=300, bbox_inches='tight')

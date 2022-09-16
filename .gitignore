@@ -1,6 +1,7 @@
 .aim/
 data/
 trajs/
+images/
 vae_*
 train_loss*
 # Byte-compiled / optimized / DLL files

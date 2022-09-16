@@ -1,6 +1,7 @@
 from typing import Dict
 import gym
 import dmc2gym
+from gym.wrappers import ClipAction
 
 from open_loop.envs.wrappers.trajectory_generator_wrapper_env import TrajectoryGeneratorWrapperEnv
 from open_loop.trajectory_generator import CpgRbfNet
@@ -14,8 +15,8 @@ TIMESTEP = {
     "HalfCheetahBulletEnv-v0": 0.0165,
     "HopperBulletEnv-v0": 0.0165,
     "cheetah_run": 0.01,
-    "MinitaurTrottingEnv-v0": 0.005,
-    "MinitaurReactiveEnv-v0": 0.005,
+    "MinitaurTrottingEnv-v0": 0.01,
+    "MinitaurReactiveEnv-v0": 0.01,
 }
 
 def make_env(env_name, seed=0):
@@ -30,7 +31,7 @@ def make_env(env_name, seed=0):
             env.action_space.seed(seed)
         else:
             env = gym.make(env_name)
-            env.reset(seed=seed)
+            env.seed(seed)
             env.action_space.seed(seed)
     elif env_type == 'dmc':
         domain, task = tuple(env_name.split('_'))
@@ -38,6 +39,7 @@ def make_env(env_name, seed=0):
     else:
         raise ValueError("No supported env type, avaiable env_tpye = [gym, dmc]")
     env.dt = TIMESTEP[env_name]
+    env = ClipAction(env)
     return env
 
 def wrap_env(env, config: Dict):

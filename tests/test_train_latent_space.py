@@ -36,13 +36,13 @@ def test_trainer(seed=1):
         '--alpha',
         '1.0',
         '--n_itr',
-        '201',
+        '101',
         '--exp_id',
-        '0',
+        '1',
         '--video_log_freq',
         '1',
         '--seed',
-        '2',
+        '0',
         '--lr',
         '0.001',
         '--n_path',
@@ -63,5 +63,7 @@ def test_trainer(seed=1):
 
 if __name__ == '__main__':
     test_trainer()
+
+
 
 

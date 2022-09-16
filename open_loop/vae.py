@@ -148,7 +148,7 @@ class VAE(nn.Module):
         reconstruction_loss = self.MSELoss(reconstruct_x, x)
         kl_divergence = torch.mean(-0.5 * torch.sum(1 + 2 * std.log() - mu ** 2 - std ** 2, dim = 1), dim = 0)
 
-        # elbo_loss = torch.mean((reconstruction_loss + kl_divergence) * (-exp_rews))
+        # elbo_loss = torch.mean((reconstruction_loss + 2 * kl_divergence) * (-exp_rews))
         elbo_loss = torch.mean((reconstruction_loss + kl_divergence))
 
         self.optimizer.zero_grad()

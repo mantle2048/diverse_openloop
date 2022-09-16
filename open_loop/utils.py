@@ -111,8 +111,6 @@ def generate_trajectory(traj_generator, alpha=0.7):
     init_weight[0:gap+ 1] = alpha * init_weight[0:gap+1]
     init_weight[-gap:] = init_weight[0:gap][::-1]
 
-    # base_traj = np.zeros(base_traj.shape)
-
     epsilon = np.random.randn(*base_traj.shape)
 
     traj = base_traj + init_weight[:, None] * epsilon

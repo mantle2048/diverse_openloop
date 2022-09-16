@@ -40,25 +40,29 @@ sns.set(style='whitegrid', palette='tab10', font_scale=1.5)
 # %autoreload 2
 # -
 
-sin_config = {'amplitude':0.2, 'theta': -0.5 * np.pi, 'frequency': 1.0}
+sin_config = {'amplitude':0.2, 'theta': -0.5 * np.pi, 'frequency': 1}
 cpg = CentralPatternGeneratorNetwork(sin_config, timestep=0.01)
 
 cpg.reset()
 fig = plt.figure(figsize=(10,6))
 ax = fig.add_subplot(111)
 cpg.plot_curve(ax)
+ax.set_xticks([0,  1,  2,  3], ['0',  'T',  '2T',  '3T'])
 ax.set_xlabel('Time')
 ax.set_ylabel('Torque')
 ax.legend(['sin 1','sin 2'])
+fig.savefig('sin.png', dpi=300)
 
 # +
 rbf = RadialBasisFunctionNetwork(num_rbf=9, cpg_net=cpg)
 fig, ax = plt.subplots(1,1, figsize=(12,8))
+ax.set_xticks([0,  1,  2,  3], ['0',  'T',  '2T',  '3T'])
 # axs = axs.flatten()
 rbf.plot_curve(ax, cpg, join=True)
     
 ax.set_xlabel('Time')
 ax.set_ylabel('Torque')
+fig.savefig('rbf.png', dpi=300)
 # -
 
 sin_config = {'amplitude':0.7, 'theta': -0.5 * np.pi, 'frequency': 1.0}

@@ -11,6 +11,7 @@ import pybullet_envs
 
 from typing import Dict
 from collections import defaultdict
+from gym.wrappers import ClipAction
 
 from torch import nn
 from open_loop.trajectory_generator import CpgRbfNet
@@ -41,6 +42,7 @@ class Latent_Trainer():
         self.config = config
 
         self.env = make_env(config['env_name'], config['seed'])
+        self.env = ClipAction(self.env)
 
         self.logger = setup_logger(
             exp_prefix=config['exp_prefix'],
@@ -87,7 +89,6 @@ class Latent_Trainer():
             trajs = generate_trajectories(
                 batch_size=self.batch_size,
                 traj_generator=self.traj_generator,
-                alpha=self.alpha
             )
             trajs = np.array(trajs)
 
@@ -132,6 +133,8 @@ class Latent_Trainer():
             latent_variables = z.repeat(self.config['variable_size'], 1)
             trajs = self.vae.generate(latent_variables)
             video_paths = traj_rollouts(trajs, self.env, render=True)
+            # for video_path in video_paths:
+            #     video_path['img_obs'] = video_path.pop('image_obs')
             self.logger.log_paths_as_videos(
                 video_paths, itr,
                 max_videos_to_save = len(video_paths),
@@ -154,7 +157,7 @@ class Latent_Trainer():
     def _eval_trajs(self, trajs):
         rew_list = []
         for traj in trajs:
-            paths = rollouts(5, self.env, traj)
+            paths = rollouts(1, self.env, traj)
             rew = np.mean([path['rew'].sum() for path in paths])
             rew_list.append(rew)
         return rew_list
@@ -205,7 +208,7 @@ def get_parser():
     parser.add_argument('--save_params', action='store_true')
 
     # vae args
-    parser.add_argument("--variable_size", type=int, default=1)
+    parser.add_argument("--variable_size", type=int, default=2)
     parser.add_argument("--alpha", type=float, default=0.7)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--layers", nargs='+', type=int, default=[256, 512, 256])

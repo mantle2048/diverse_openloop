@@ -21,7 +21,7 @@ def test_run(seed=1):
         'MinitaurTrottingEnv-v0',
         'MinitaurReactiveEnv-v0',
     ]
-    env_name = env_set[-1]
+    env_name = env_set[0]
     
     arg_list =  [
         '--n_itr',
@@ -33,7 +33,7 @@ def test_run(seed=1):
         '--amplitude',
         '1',
         '--frequency',
-        '10.0',
+        '2',
         '--num_rbf',
         '100',
         '--env_name',

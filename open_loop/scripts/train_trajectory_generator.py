@@ -98,6 +98,7 @@ class Traj_Trainer():
             # first element is the best solution, second element is the best fitness
             best_param, best_fitness, _, _ = self.es_solver.result()
             # set best param to local worker
+            # self.trajectory_generator.set_flat_weight(solutions[0])
             self.trajectory_generator.set_flat_weight(best_param)
 
             if self.logtabular:
